@@ -1,23 +1,60 @@
 # OpenCode Frontend Reviewer
 
-Reusable OpenCode review setup for React + TypeScript projects. It provides one read-only review agent, four slash commands, and two reusable skills.
+Reusable code-review setup for [OpenCode](https://opencode.ai/) focused on modern React + TypeScript applications.
 
-The reference setup is tuned for a project using React 18, TypeScript, Redux Toolkit/RTK Query, Tailwind, Radix/shadcn-style UI, Vitest, and a **modified Feature-Sliced Design (FSD)**. The architecture assumptions are deliberately documented and can be adapted per repository.
+The project provides a dedicated read-only reviewer agent, reusable review skills, and three simple commands:
 
-## What you get
+```text
+/review
+/review-deep
+/review-security
+```
+
+The goal is to make AI-assisted code review part of the normal development workflow without requiring long prompts or manually explaining review rules every time.
+
+---
+
+## What it checks
+
+The reviewer focuses on meaningful engineering problems rather than formatting or subjective style preferences.
+
+It checks:
+
+* correctness and potential bugs;
+* React lifecycle and Hooks;
+* TypeScript correctness;
+* async code and race conditions;
+* memory and resource leaks;
+* state management;
+* API usage;
+* architecture and module boundaries;
+* reuse of existing project code;
+* SOLID / DRY / KISS / YAGNI;
+* unnecessary complexity and premature abstractions;
+* performance regressions;
+* security;
+* accessibility;
+* error handling;
+* tests and important missing test cases.
+
+---
+
+# Project structure
 
 ```text
 .opencode/
 ├── agents/
 │   └── reviewer.md
+│
 ├── commands/
 │   ├── review.md
-│   ├── review-staged.md
 │   ├── review-deep.md
 │   └── review-security.md
+│
 └── skills/
     ├── frontend-review/
     │   └── SKILL.md
+    │
     └── frontend-security/
         └── SKILL.md
 
@@ -25,313 +62,877 @@ AGENTS.example.md
 README.md
 ```
 
-### `/review`
+Each part has a different responsibility.
 
-The everyday command. Use it while developing to review the current working-tree diff. It is intentionally focused: it starts from changed code, reads surrounding code when needed, searches for existing reusable solutions, and avoids a repository-wide audit unless the diff justifies it.
+### Agent
+
+```text
+.opencode/agents/reviewer.md
+```
+
+Defines **who performs the review**.
+
+The reviewer is intended to be a read-only agent that analyzes code but does not modify it.
+
+---
+
+### Commands
+
+```text
+.opencode/commands/
+```
+
+Define **what should be reviewed**.
+
+There are intentionally only three commands:
 
 ```text
 /review
-```
-
-It checks correctness, React/TypeScript, async/races, memory/resource cleanup, Redux/RTK Query, security essentials, modified FSD boundaries, reuse, performance, accessibility, tests, maintainability, and explicitly reviews `||` versus `??` semantics.
-
-### `/review-staged`
-
-Pre-commit review of exactly what is staged:
-
-```bash
-git add <files>
-```
-
-Then in OpenCode:
-
-```text
-/review-staged
-```
-
-This is useful as a final local gate before committing.
-
-### `/review-deep`
-
-Use for a larger feature, refactor, risky change, or before opening a PR:
-
-```text
 /review-deep
-```
-
-It traces affected consumers/imports/state/API behavior more broadly, performs deeper reuse and FSD analysis, loads the security methodology, and can use project verification commands when shell access is available and approved.
-
-### `/review-security`
-
-Dedicated security pass:
-
-```text
 /review-security
 ```
 
-The normal `/review` already contains security essentials. This command exists because a proper security review needs broader data-flow/trust-boundary analysis than an everyday diff review.
+The small command set is deliberate. Specialized React, TypeScript, architecture, performance, memory-leak, and reuse checks belong to the reviewer skills rather than separate commands.
 
-It covers XSS/DOM injection, CSRF in the context of the actual authentication model, unsafe URL/navigation flows, token/storage handling, `postMessage`, sensitive data leakage, request construction/client-side CSRF, object/prototype hazards, dynamic/third-party content, and relevant browser hardening.
+---
 
-## Why agent + commands + skills?
-
-OpenCode gives these mechanisms different jobs:
-
-- **Agent**: defines *who performs the review*: model, role, permissions, and core behavior.
-- **Command**: defines *what review to run now*: fast, staged, deep, or security.
-- **Skill**: defines *how to reason about a specialist task*: the reusable review methodology.
-- **AGENTS.md**: defines *what is special about the target repository*: architecture, commands, conventions, and local rules.
-
-This keeps prompts maintainable. The agent stays small, commands stay task-oriented, and detailed methodology lives in skills that OpenCode can load when relevant.
-
-## Installation in a project
-
-### Option A — copy the `.opencode` directory
-
-Clone this repository somewhere outside your application repository, then copy `.opencode` into the root of the target project:
-
-```bash
-cp -R /path/to/opencode-frontend-reviewer/.opencode /path/to/your-project/
-```
-
-The target becomes:
+### Skills
 
 ```text
-your-project/
-├── .git/
+.opencode/skills/
+```
+
+Define **how the review should be performed**.
+
+`frontend-review` contains the general frontend review methodology.
+
+`frontend-security` contains the deeper security methodology.
+
+---
+
+### AGENTS.md
+
+`AGENTS.md` belongs to the application being reviewed, not to this reviewer itself.
+
+It describes project-specific context such as:
+
+* architecture;
+* framework and libraries;
+* directory structure;
+* state management;
+* API architecture;
+* build/test/lint commands;
+* project conventions;
+* architectural exceptions;
+* important constraints.
+
+This repository contains:
+
+```text
+AGENTS.example.md
+```
+
+only as an example.
+
+For a real project, generating `AGENTS.md` using OpenCode `/init` is recommended.
+
+---
+
+# Installation
+
+## 1. Copy `.opencode`
+
+Copy the `.opencode` directory from this repository into the root of the project you want to review.
+
+The result should look approximately like this:
+
+```text
+my-project/
 ├── .opencode/
 │   ├── agents/
+│   │   └── reviewer.md
 │   ├── commands/
+│   │   ├── review.md
+│   │   ├── review-deep.md
+│   │   └── review-security.md
 │   └── skills/
-├── AGENTS.md
+│       ├── frontend-review/
+│       │   └── SKILL.md
+│       └── frontend-security/
+│           └── SKILL.md
+│
 ├── src/
-└── package.json
+├── package.json
+└── ...
 ```
 
-OpenCode discovers project agents and skills under `.opencode` while walking to the project root.
+---
 
-### Option B — copy individual pieces
+## 2. Configure the model
 
-If the project already has `.opencode`, merge the folders instead of replacing them:
+Open:
 
-```bash
-cp -R .opencode/agents/*   /path/to/project/.opencode/agents/
-cp -R .opencode/commands/* /path/to/project/.opencode/commands/
-cp -R .opencode/skills/*   /path/to/project/.opencode/skills/
+```text
+.opencode/agents/reviewer.md
 ```
 
-Review existing names first to avoid overwriting project-specific files.
+and configure the model available in your OpenCode environment.
 
-## Configure the model
-
-`reviewer.md` currently contains:
+For example:
 
 ```yaml
-model: yadro-provider/DeepSeek-V4-Flash
+model: your-provider/your-model
 ```
 
-That is intentional for the reference environment. A colleague using another provider **must change this line** to a model available in their OpenCode configuration.
+Do not blindly copy a provider/model name from another developer's environment.
 
-The methodology itself is model-independent.
+---
 
-For the reference environment, Qwen can remain the general `small_model`/`subagent_model`; the reviewer explicitly requests DeepSeek so review quality does not silently depend on the global subagent default.
+## 3. Generate project instructions
 
-## Create or update `AGENTS.md`
+Start OpenCode from the root of the application:
 
-OpenCode V2 uses `AGENTS.md` for persistent project instructions. Do not blindly copy architecture assumptions between repositories.
+```bash
+cd my-project
+opencode
+```
 
-If the target project has no `AGENTS.md`, OpenCode can initialize one with:
+Then run:
 
 ```text
 /init
 ```
 
-Then merge in relevant rules from `AGENTS.example.md`.
-
-At minimum document:
-
-1. stack and package manager;
-2. architecture/layer boundaries;
-3. locations of shared/reusable UI and utilities;
-4. generated files that must not be edited;
-5. lint/typecheck/test/build commands;
-6. unusual project conventions.
-
-Commit the target project's `AGENTS.md` so all developers and OpenCode sessions receive the same repository-specific context.
-
-## Reference project: modified FSD
-
-The supplied skill intentionally does **not** enforce textbook FSD. The reference repository uses:
+OpenCode will analyze the repository and create:
 
 ```text
-src/
-├── app/
-├── pages/
-├── widgets/
-├── features/
-├── shared/
-├── apis/
-├── stores/
-├── layouts/
-├── assets/
-├── test/
-└── types/
+AGENTS.md
 ```
 
-There is no `entities` layer; domain API/state responsibilities are represented by `apis` and `stores`. The reviewer is explicitly told not to "fix" the project by inventing an `entities` layer.
+Review the generated file manually.
 
-For another project, edit the **Modified FSD architecture** section in `frontend-review/SKILL.md` and its `AGENTS.md`.
+Automatic repository analysis may not understand intentional architectural decisions, so document important exceptions explicitly.
 
-The architectural checks focus on the useful invariants: dependency direction, isolation, public boundaries, avoiding feature business logic in shared code, correct responsibility/placement, and avoiding cross-module coupling.
+For example:
 
-## Reuse checks
+```md
+## Architecture
 
-One of the strongest rules in this setup is **search before claiming duplication**.
+The project uses a modified Feature-Sliced Design architecture.
 
-When new code introduces a component, hook, utility, type, selector, API helper, formatter, constant, or abstraction, the reviewer should:
+Important:
+
+- Do not introduce architectural layers only to conform to canonical FSD.
+- Preserve the architecture already established by the project.
+- Keep modules/slices isolated.
+- Respect dependency direction.
+- Prefer public module APIs over deep imports.
+```
+
+`AGENTS.example.md` in this repository can be used as a reference.
+
+---
+
+# Commands
+
+## `/review`
+
+The command you will use most often.
+
+Run it while developing:
 
 ```text
-identify responsibility
-        ↓
-search repository
-        ↓
-inspect plausible existing implementations
-        ↓
-existing semantic match?
-   ↙                 ↘
- yes                 no
- ↓                    ↓
-consider reuse       review new solution
+/review
 ```
 
-This prevents two common bad review behaviors:
+It reviews **all current uncommitted work**.
 
-- approving reinvention because the model only looked at the diff;
-- shouting "DRY" merely because two snippets look similar.
-
-DRY, SOLID, KISS, and YAGNI are used as diagnostic principles, not as automatic style rules.
-
-## `??` versus `||`
-
-The normal review explicitly checks changed fallback expressions.
-
-Potential bug:
-
-```ts
-const zoom = config.zoom || 10;
-```
-
-If `0` is valid, this changes its meaning. Nullish fallback may be intended:
-
-```ts
-const zoom = config.zoom ?? 10;
-```
-
-But the reviewer must **not** mechanically replace every `||`. If the desired rule really is "fallback for any falsy value", `||` is correct. The same semantic check is applied in the opposite direction to `??`.
-
-## Memory/resource leak checks
-
-The reviewer treats lifecycle resources as owned resources and looks for missing disposal/cleanup around:
-
-- DOM/event listeners;
-- `setTimeout` / `setInterval`;
-- `requestAnimationFrame`;
-- `IntersectionObserver`, `ResizeObserver`, `MutationObserver`;
-- WebSocket/SSE/subscriptions;
-- stale/obsolete async operations;
-- object URLs;
-- workers;
-- media/external-library instances;
-- caches/maps or retained references that can grow indefinitely.
-
-It also checks React effect setup/cleanup symmetry and stale closure/dependency problems.
-
-## Security design
-
-Security is deliberately split into two levels.
-
-### Everyday security
-
-`/review` includes a lightweight security pass so obvious vulnerabilities are not postponed: XSS sinks, untrusted HTML/URLs, secrets/tokens, dangerous storage, unsafe `postMessage`, sensitive logging, browser injection sinks, and suspicious request construction.
-
-### Dedicated audit
-
-`/review-security` loads the full `frontend-security` skill and follows data from source to sink. It avoids simplistic rules such as "all localStorage is a vulnerability" or "every API needs a CSRF token".
-
-CSRF review first determines how authentication works. CSRF is especially relevant when the browser automatically attaches credentials (commonly cookies). Frontend code alone may not reveal server-side CSRF validation, cookie flags, CSP, CORS, or authorization, so the reviewer is forbidden from claiming those controls are absent without evidence.
-
-Similarly, React's normal text rendering is escaped; the reviewer concentrates on actual dangerous sinks and unsafe rendering patterns rather than flagging ordinary JSX interpolation.
-
-## Shell permissions
-
-The reference OpenCode environment uses `bash: ask`. This setup does not weaken that policy.
-
-The reviewer is read-only with respect to file editing. Shell execution remains governed by the user's/project's OpenCode configuration. Deep review may propose/use verification commands only when permitted and approved.
-
-If your organization has stricter requirements, restrict the reviewer further in its agent permissions. Do not loosen corporate policy merely to make review more convenient.
-
-## Recommended workflow
-
-During development:
+That includes:
 
 ```text
-code → /review → fix → /review
+unstaged changes
++
+staged changes
++
+relevant untracked files
 ```
 
-Before commit:
+Conceptually:
 
 ```text
-git add ... → /review-staged → commit
+HEAD
+ │
+ └── current working state
+          ↑
+       /review
 ```
 
-Before a PR or after a substantial refactor:
+It does **not** review already committed changes from the feature branch.
+
+### Example
+
+You have already made several commits:
+
+```text
+commit 1
+commit 2
+commit 3
+commit 4  ← HEAD
+```
+
+Then you change:
+
+```text
+Map.tsx       unstaged
+api.ts        staged
+NewPanel.tsx  untracked
+```
+
+Running:
+
+```text
+/review
+```
+
+reviews those current changes.
+
+It does not review commits 1–4 again.
+
+---
+
+## Recommended development workflow
+
+Use `/review` whenever you reach a meaningful checkpoint:
+
+```text
+write code
+    ↓
+/review
+    ↓
+fix findings
+    ↓
+continue development
+    ↓
+/review
+    ↓
+commit
+```
+
+You can run `/review` as often as useful.
+
+Because `/review` already includes staged changes, a separate `/review-staged` command is intentionally not provided.
+
+If you want another review immediately before committing, simply run:
+
+```text
+/review
+```
+
+again.
+
+---
+
+# `/review-deep`
+
+Use this when the feature is finished or before creating a Pull Request.
 
 ```text
 /review-deep
 ```
 
-For security-sensitive work (auth, HTML rendering, messaging, URL/request construction, permissions, storage):
+Unlike `/review`, this command reviews the **entire feature branch**.
+
+Suppose you created a feature branch from `master`:
+
+```text
+master
+   │
+   ●  ← branch point
+    \
+     ● commit 1
+     ● commit 2
+     ● commit 3
+     ● ...
+     ● commit 10 ← HEAD
+```
+
+`/review-deep` determines the appropriate base branch and merge-base and reviews the final combined change introduced by the feature.
+
+Conceptually:
+
+```text
+base / merge-base
+        │
+        └──────────────── HEAD
+               ↑
+          /review-deep
+```
+
+If the feature contains 10 commits, the reviewer does **not** review each commit independently.
+
+Instead it asks:
+
+> What will this feature introduce into the base branch if it is merged now?
+
+For example, if code was added in commit 2 and removed in commit 8, it should not appear as a finding because it is not part of the final feature diff.
+
+---
+
+## Repository-wide investigation
+
+The feature diff defines the primary review scope, but `/review-deep` may inspect unchanged code elsewhere in the repository.
+
+This is important for architecture and reuse.
+
+For example:
+
+```text
+feature change:
+
+features/map/ui/CustomSelect.tsx
+              │
+              │ repository search
+              ▼
+existing implementation:
+
+shared/ui/Select/Select.tsx
+```
+
+The reviewer can then determine whether the existing implementation should be reused.
+
+This applies to:
+
+* components;
+* hooks;
+* utilities;
+* types;
+* constants;
+* selectors;
+* stores;
+* API endpoints;
+* shared business logic;
+* existing architectural patterns;
+* tests.
+
+The reviewer should never claim that an existing solution should be reused unless it actually found that solution.
+
+---
+
+## When to use `/review-deep`
+
+Typical cases:
+
+```text
+feature completed
+large refactoring completed
+new module introduced
+state-management changes
+API architecture changes
+many files changed
+before creating a Pull Request
+```
+
+You generally do **not** need `/review-deep` repeatedly while writing code.
+
+Use `/review` for that.
+
+---
+
+# `/review-security`
+
+Run:
 
 ```text
 /review-security
 ```
 
-## Interpreting findings
+for a dedicated security-oriented review.
 
-Findings use:
+Basic security checks are already included in `/review` and `/review-deep`.
 
-- **CRITICAL** — credible severe exploit/data-loss/system-impact path.
-- **HIGH** — serious correctness/security/regression issue with realistic impact.
-- **MEDIUM** — meaningful defect or maintainability/architecture issue worth fixing before merge in normal circumstances.
-- **LOW** — limited-risk improvement with concrete value.
+`/review-security` exists for changes where security deserves a separate, deeper pass.
 
-The agent ends with `READY` or `NEEDS FIXES`. By default, LOW-only findings should not block.
+Typical examples:
 
-A good finding must state the problem, evidence, realistic impact, and minimal fix. The prompt explicitly discourages speculative issues, style-only noise, severity inflation, and unnecessary rewrites.
+* authentication;
+* authorization;
+* permissions;
+* cookies;
+* tokens;
+* forms;
+* user-controlled input;
+* HTML rendering;
+* `dangerouslySetInnerHTML`;
+* URLs and redirects;
+* `postMessage`;
+* localStorage/sessionStorage;
+* persisted application state;
+* file upload/download;
+* external content;
+* security-sensitive API calls.
 
-## Adapting this repository for another team
+The security review considers applicable risks such as:
 
-Do these first:
+* XSS;
+* DOM-based XSS;
+* CSRF;
+* unsafe redirects;
+* unsafe URLs;
+* credential/token exposure;
+* sensitive data leakage;
+* insecure browser storage;
+* unsafe `postMessage`;
+* request construction from untrusted data;
+* unsafe parsing/deserialization;
+* prototype/object pollution risks.
 
-1. Change the model in `.opencode/agents/reviewer.md`.
-2. Update FSD/architecture assumptions in `frontend-review/SKILL.md`.
-3. Create/update the target project's `AGENTS.md`.
-4. Update reusable-code locations (`shared/ui`, design system, hooks, utils, etc.).
-5. Record the target project's actual verification commands.
-6. Add framework-specific checks only when the project really uses those technologies.
+Security findings should be based on the actual application context rather than generic security checklists.
 
-Avoid turning the skill into a giant company handbook. Put stable review methodology in skills and repository-specific facts in `AGENTS.md`.
+For example, the reviewer should first understand how authentication works before claiming that an API request requires CSRF protection.
 
-## Design references
+---
 
-This setup follows current OpenCode concepts: project agents live in `.opencode/agents`, project skills in `.opencode/skills`, commands are reusable slash-command prompt templates, and `AGENTS.md` carries persistent repository instructions.
+# Review philosophy
 
-The React lifecycle checks follow React's documented effect model: an effect that connects to an external system can return cleanup, cleanup runs before a changed effect is re-established and on unmount, and Strict Mode's development setup/cleanup cycle is intended to expose incorrect cleanup assumptions.
+The reviewer is intentionally designed to avoid noisy AI code reviews.
 
-Security methodology is based on OWASP's contextual XSS guidance and CSRF guidance, including the important distinction that CSRF defenses depend on the authentication/request model and that XSS can undermine CSRF mitigations.
+A useful review should find real engineering problems, not demonstrate how many comments an AI can generate.
 
-Feature-Sliced Design concepts are adapted to the actual repository rather than enforced mechanically.
+Before reporting a finding, the reviewer should effectively answer:
 
-## License / internal use
+```text
+Is this actually a problem?
 
-Add the license appropriate for your organization before publishing this repository. If the repository contains internal architectural details, model/provider names, or company-specific endpoints, remove or generalize them before sharing outside the organization.
+Can it be demonstrated from the code?
+
+Does fixing it provide meaningful value?
+```
+
+If not, the finding should normally be omitted.
+
+---
+
+# Reuse before invention
+
+One of the main goals of the reviewer is preventing unnecessary duplication.
+
+When new reusable code appears, the reviewer should investigate whether the repository already contains an appropriate solution.
+
+This includes new:
+
+* components;
+* hooks;
+* utilities;
+* helpers;
+* types;
+* constants;
+* selectors;
+* state logic;
+* API helpers;
+* business abstractions.
+
+For frontend projects, particular attention should be paid to existing shared UI libraries and design-system components.
+
+For example:
+
+```text
+new component
+     │
+     ▼
+search repository
+     │
+     ├── shared UI
+     ├── design system
+     ├── features
+     ├── widgets
+     ├── hooks
+     ├── utilities
+     └── existing domain code
+             │
+             ▼
+      reuse if appropriate
+```
+
+However, reuse is not an absolute rule.
+
+The reviewer should not create an abstraction merely to eliminate a few similar lines of code.
+
+---
+
+# SOLID, DRY, KISS and YAGNI
+
+These principles are used as **reasoning tools**, not mechanical rules.
+
+The reviewer should identify meaningful problems such as:
+
+* excessive responsibility;
+* inappropriate coupling;
+* duplicated domain knowledge;
+* unnecessary complexity;
+* unnecessary indirection;
+* premature abstraction;
+* abstractions that make code harder to understand.
+
+It should not report:
+
+> DRY violation
+
+simply because two small pieces of code happen to look similar.
+
+Sometimes duplication is simpler and safer than an incorrect abstraction.
+
+---
+
+# Architecture and FSD
+
+The reviewer supports Feature-Sliced Design style architectures but should respect the architecture documented by the project.
+
+It checks things such as:
+
+* module/slice isolation;
+* dependency direction;
+* inappropriate cross-feature dependencies;
+* public boundaries;
+* deep imports;
+* misplaced responsibilities;
+* business logic leaking into generic shared code;
+* code placed at an unnecessarily high architectural layer.
+
+The reviewer must **not** force canonical FSD onto a deliberately modified architecture.
+
+`AGENTS.md` is the source of truth for project-specific architectural decisions.
+
+---
+
+# React review
+
+React-specific checks include:
+
+* incorrect Hook usage;
+* effect lifecycle;
+* missing or incorrect cleanup;
+* dependency problems;
+* stale closures;
+* unnecessary effects;
+* derived state;
+* unstable keys;
+* unnecessary rerenders;
+* incorrect memoization;
+* state mutation;
+* asynchronous updates and races.
+
+The reviewer should distinguish real problems from theoretical ones.
+
+---
+
+# Memory and resource leaks
+
+Memory/resource management receives explicit attention.
+
+Relevant areas include:
+
+* event listeners;
+* timers;
+* intervals;
+* `requestAnimationFrame`;
+* `IntersectionObserver`;
+* `ResizeObserver`;
+* `MutationObserver`;
+* subscriptions;
+* WebSocket connections;
+* Server-Sent Events;
+* unfinished/obsolete async operations;
+* AbortController;
+* Web Workers;
+* object URLs;
+* external library instances;
+* retained DOM/data references;
+* unbounded caches and collections;
+* `useEffect` cleanup.
+
+Cleanup should only be requested when the underlying resource actually requires it.
+
+---
+
+# TypeScript review
+
+TypeScript checks include:
+
+* incorrect types;
+* unsafe assertions;
+* unnecessary `any`;
+* incorrect narrowing;
+* null/undefined handling;
+* API type mismatches;
+* mutation where it causes problems;
+* unnecessary duplication of existing types.
+
+The reviewer should prefer existing project types when appropriate.
+
+---
+
+# State and API review
+
+The reviewer should understand the state-management and API approach documented in `AGENTS.md`.
+
+Depending on the project, this may include:
+
+* Redux Toolkit;
+* RTK Query;
+* Zustand;
+* TanStack Query;
+* custom stores;
+* custom API clients.
+
+Checks should focus on correctness, duplication, lifecycle, cache behavior, state ownership, and established project patterns.
+
+---
+
+# Performance
+
+Performance findings should be evidence-based.
+
+Relevant examples include:
+
+* expensive work during render;
+* unnecessary rerenders;
+* repeated heavy calculations;
+* unnecessary allocations;
+* large DOM rendering;
+* missing virtualization where scale actually requires it;
+* main-thread blocking;
+* duplicated network requests;
+* inefficient selectors;
+* inappropriate state subscriptions.
+
+Do not report speculative micro-optimizations.
+
+---
+
+# Tests
+
+The reviewer should consider whether changed behavior requires tests.
+
+It should focus on meaningful cases such as:
+
+* important business logic;
+* regressions;
+* edge cases;
+* error paths;
+* complex state transitions;
+* previously broken behavior.
+
+It should not mechanically demand tests for every trivial implementation detail.
+
+---
+
+# Severity levels
+
+Findings use four severity levels.
+
+### CRITICAL
+
+Examples:
+
+* exploitable security vulnerability;
+* data loss;
+* severe production failure.
+
+### HIGH
+
+Examples:
+
+* likely runtime bug;
+* serious regression;
+* significant resource leak;
+* major architectural violation.
+
+### MEDIUM
+
+Examples:
+
+* meaningful maintainability problem;
+* realistic performance issue;
+* architectural/design risk;
+* important missing edge case.
+
+### LOW
+
+Useful improvement with limited impact.
+
+Severity should not be inflated.
+
+---
+
+# Review output
+
+A normal review is structured approximately as:
+
+```text
+# Code Review
+
+Scope:
+- Staged files: ...
+- Unstaged files: ...
+- Untracked files reviewed: ...
+
+## High
+
+...
+
+## Medium
+
+...
+
+## Low
+
+...
+
+## Summary
+
+Critical: 0
+High: 1
+Medium: 2
+Low: 1
+
+## Verdict
+
+NEEDS FIXES
+```
+
+Empty severity sections may be omitted.
+
+If no meaningful problems are found:
+
+```text
+No significant issues found.
+
+Verdict: READY
+```
+
+---
+
+# Recommended workflow
+
+For normal development:
+
+```text
+                    DEVELOPMENT
+
+                         │
+                         ▼
+                    write code
+                         │
+                         ▼
+                     /review
+                         │
+                  fix findings
+                         │
+                         ▼
+                 continue coding
+                         │
+                         ▼
+                     /review
+                         │
+                         ▼
+                      commit
+                         │
+                         ▼
+                  more commits...
+                         │
+                         ▼
+                feature completed
+                         │
+                         ▼
+                  /review-deep
+                         │
+                         ▼
+                       PR
+```
+
+For security-sensitive work:
+
+```text
+/review
+   ↓
+/review-security
+   ↓
+/review-deep
+   ↓
+PR
+```
+
+---
+
+# Quick reference
+
+### While developing
+
+```text
+/review
+```
+
+> Review what I am working on right now.
+
+### Feature finished / before PR
+
+```text
+/review-deep
+```
+
+> Review the entire feature as it will be merged into the base branch.
+
+### Security-sensitive changes
+
+```text
+/review-security
+```
+
+> Perform a dedicated security review.
+
+---
+
+# Updating
+
+This reviewer is intentionally kept separate from application repositories so its rules can evolve independently.
+
+When the reviewer configuration changes, update the `.opencode` directory in projects that use it.
+
+Project-specific rules should remain in each application's `AGENTS.md`.
+
+This separation keeps responsibilities clear:
+
+```text
+opencode-frontend-reviewer
+        │
+        ├── how to review
+        │
+        ├── review methodology
+        │
+        └── security methodology
+
+application repository
+        │
+        └── AGENTS.md
+              │
+              ├── what this project is
+              ├── architecture
+              ├── commands
+              └── project conventions
+```
+
+---
+
+# Philosophy
+
+The goal is not to replace human code review.
+
+The goal is to catch obvious and non-obvious problems **before another developer has to find them**.
+
+A good result is not:
+
+> The AI produced 25 comments.
+
+A good result is:
+
+> The reviewer found the two issues that actually mattered.
