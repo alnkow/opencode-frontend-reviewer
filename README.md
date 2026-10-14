@@ -21,6 +21,9 @@ The reviewer focuses on meaningful engineering problems rather than formatting o
 It checks:
 
 * correctness and potential bugs;
+* impact of the change on surrounding code (what became redundant, inconsistent or wasteful);
+* code that contradicts its own intent (wrong conditions, misleading comments, dead code, leftovers);
+* component decomposition (what should be extracted, and components declared inside components);
 * React lifecycle and Hooks;
 * TypeScript correctness;
 * async code and race conditions;
@@ -35,7 +38,8 @@ It checks:
 * security;
 * accessibility;
 * error handling;
-* tests and important missing test cases.
+* tests and important missing test cases;
+* code conventions C1–C6 (see [Conventions](#conventions)).
 
 ---
 
@@ -43,6 +47,8 @@ It checks:
 
 ```text
 .opencode/
+├── opencode.json                  # loads conventions into every agent
+│
 ├── agents/
 │   └── reviewer.md
 │
@@ -50,6 +56,12 @@ It checks:
 │   ├── review.md
 │   ├── review-deep.md
 │   └── review-security.md
+│
+├── instructions/
+│   └── frontend-conventions.md    # conventions C1–C6
+│
+├── scripts/
+│   └── review-context.sh          # git context for the commands
 │
 └── skills/
     ├── frontend-review/
@@ -72,7 +84,18 @@ Each part has a different responsibility.
 
 Defines **who performs the review**.
 
-The reviewer is intended to be a read-only agent that analyzes code but does not modify it.
+The reviewer is read-only. This is enforced by OpenCode permissions, not only by the prompt:
+
+* `edit: deny`: no file edits or patches;
+* `bash`: everything is denied except read-only git commands (`git status`, `git diff`, `git log`, `git show`, `git blame`, `git merge-base`, `git rev-parse`, `git ls-files`, `git grep`);
+* `task: deny`: the reviewer cannot start other subagents that could edit files;
+* `webfetch` / `websearch: deny`.
+
+The agent uses `mode: all`, and the commands use `subtask: false`. Because of that the review runs directly in the current session as the Reviewer agent.
+
+This is deliberate. When a command runs as a subtask, OpenCode returns the result to the primary agent (usually Build) with the message *"Summarize the task tool output above and continue with your task"*. Build then starts applying the fixes on its own. With `subtask: false` nobody with edit rights receives the review automatically.
+
+Because of `mode: all`, the Reviewer also appears in the Tab agent list, so you can switch to it and ask follow-up questions about the findings.
 
 ---
 
@@ -107,6 +130,40 @@ Define **how the review should be performed**.
 `frontend-review` contains the general frontend review methodology.
 
 `frontend-security` contains the deeper security methodology.
+
+Commands attach the right skill with an `@file` reference, so the model always gets it, even when it would forget to call the skill tool.
+
+---
+
+### Instructions
+
+```text
+.opencode/opencode.json
+.opencode/instructions/frontend-conventions.md
+```
+
+Code conventions C1–C6 (see [Conventions](#conventions)).
+
+`.opencode/opencode.json` adds the file to OpenCode `instructions`, so the conventions are in the system prompt of **every** agent:
+
+* Build follows them while writing code;
+* Reviewer reports violations.
+
+OpenCode merges `instructions` from all config files, so this does not override the project's own `opencode.json`.
+
+---
+
+### Scripts
+
+```text
+.opencode/scripts/review-context.sh
+```
+
+Collects read-only git context for the commands with OpenCode shell injection (`` !`command` ``): file counts, `git status`, diff stat, untracked files, and for `/review-deep` the base branch, merge-base and commit list.
+
+The model gets a ready scope instead of working it out itself. This matters for smaller models.
+
+The script excludes the `.opencode` folder and lockfiles from the scope.
 
 ---
 
@@ -165,6 +222,13 @@ my-project/
 ├── package.json
 └── ...
 ```
+
+Requirements and notes:
+
+* `.opencode` must be in the git repository root: the commands find the script and the skills relative to it.
+* The commands need `git` and `sh`. On Windows, use Git Bash or WSL.
+* If the project already has its own `.opencode/opencode.json`, do not overwrite it. Add `".opencode/instructions/frontend-conventions.md"` to its `instructions` array instead.
+* Changes inside `.opencode` are excluded from the review scope.
 
 ---
 
@@ -298,6 +362,22 @@ reviews those current changes.
 
 It does not review commits 1–4 again.
 
+You can add a focus as an argument:
+
+```text
+/review check the hooks in Map.tsx carefully
+```
+
+### Applying fixes
+
+The reviewer only reports. It never edits code and never offers to.
+
+To fix findings, switch to Build (Tab) if needed and ask explicitly, for example:
+
+```text
+fix findings 1 and 3 from the review
+```
+
 ---
 
 ## Recommended development workflow
@@ -309,7 +389,7 @@ write code
     ↓
 /review
     ↓
-fix findings
+fix findings (ask Build)
     ↓
 continue development
     ↓
@@ -375,6 +455,41 @@ Instead it asks:
 > What will this feature introduce into the base branch if it is merged now?
 
 For example, if code was added in commit 2 and removed in commit 8, it should not appear as a finding because it is not part of the final feature diff.
+
+### Base branch detection
+
+The base branch is detected by the script, not by the model. The candidates are:
+
+* the remote default branch (`origin/HEAD`);
+* `master`, `main`, `develop`;
+* their `origin/` versions.
+
+Candidates that do not exist are skipped, so a repository with only `master` or only `main` works without configuration. `origin/HEAD` is optional.
+
+Among the existing candidates, the script picks the one with the **fewest commits** between its merge-base and `HEAD`, that is, the branch the feature most recently diverged from. The choice follows repository history, not branch names. A feature branched from `develop` is therefore compared with `develop`, even when `origin/HEAD` points to `master`. A stale local `master` loses to a fresher `origin/master`.
+
+The report header shows the result:
+
+```text
+Current branch: my-feature
+Base branch: develop
+Merge base: 122e1df d3
+Diff range: develop...HEAD
+Commits in feature: 2
+Changed files: 2
+```
+
+The git context also lists all candidates with their commit counts.
+
+Special cases:
+
+* **Explicit base**: `/review-deep develop`, `/review-deep origin/master`. The branch must exist and share history with the current branch. Otherwise the review stops with an error and the branch is never silently replaced with another one.
+* **Ambiguous base**: two candidates are equally close but have different merge-bases (possible after merging another branch into the feature). The review continues with the first candidate and shows a warning at the top of the report. Candidates that are equally close with the same merge-base produce the same diff, so they are not ambiguous.
+* **On the base branch itself**: the feature has 0 commits, and only uncommitted changes are reviewed.
+
+The script runs only read-only git commands. It never runs `fetch`, `pull`, `checkout`, `reset` or `rebase`, and the reviewer's permissions deny them as well.
+
+Uncommitted changes are reported in a separate section and are not mixed with the feature diff.
 
 ---
 
@@ -512,6 +627,42 @@ If not, the finding should normally be omitted.
 
 ---
 
+# Impact on surrounding code
+
+AI reviewers tend to look only at the changed lines. This reviewer also checks code directly connected to the change: the rest of the file, callers and consumers, and the code the change calls.
+
+It reports when the change made existing code:
+
+* **redundant**: a check that can no longer trigger, a prop/import/state/type that is no longer used, a memoization without purpose;
+* **inconsistent**: one call site updated and another not, a type changed but mocks or mappers not;
+* **wasteful**: the same data now requested or computed twice;
+* **replaceable**: new code duplicates a helper right next to it.
+
+Problems in neighboring code that existed before the change and are unrelated to it are not reported.
+
+---
+
+# Conventions
+
+Conventions live in `.opencode/instructions/frontend-conventions.md`. They are loaded into every agent, so the code is written correctly from the start and the reviewer checks the same rules.
+
+| ID | Rule |
+|----|------|
+| C1 | A function whose body is only `return` becomes an arrow function with implicit return: `() => (...)` |
+| C2 | The `JSX` type is imported: `import type { JSX } from 'react'` (no global `JSX`) |
+| C3 | No inline `style` for values known in advance; use Tailwind classes. Only runtime-computed values are allowed |
+| C4 | No `!important`, including the Tailwind modifier `!mt-0` / `mt-0!` |
+| C5 | Tests do not find elements by visible text: use role, label or `data-testid` |
+| C6 | Names describe the value and the action: plural / `List` for arrays, `Map` / `ById` for lookups, `is` / `has` for booleans, `get` / `set` / `handle` verbs that match behavior |
+
+Convention violations:
+
+* are checked only in added or changed lines;
+* are listed compactly in a separate `Conventions` section, one line each;
+* make the verdict `NEEDS FIXES`, because a human reviewer will reject them anyway and they are cheap to fix.
+
+---
+
 # Reuse before invention
 
 One of the main goals of the reviewer is preventing unnecessary duplication.
@@ -619,9 +770,12 @@ React-specific checks include:
 * unnecessary rerenders;
 * incorrect memoization;
 * state mutation;
-* asynchronous updates and races.
+* asynchronous updates and races;
+* component decomposition.
 
 The reviewer should distinguish real problems from theoretical ones.
+
+Decomposition is reported only by concrete criteria: a block with its own state or handlers, repeated markup, non-trivial markup inside `.map()`, very long JSX with independent sections. A component declared inside another component is reported as HIGH: it remounts on every render and loses its state.
 
 ---
 
@@ -788,12 +942,17 @@ Scope:
 
 ...
 
+## Conventions
+
+- `src/features/map/ui/Panel.tsx:42` C3: `style={{ marginTop: 8 }}` → `className="mt-2"`
+
 ## Summary
 
 Critical: 0
 High: 1
 Medium: 2
 Low: 1
+Conventions: 1
 
 ## Verdict
 
@@ -801,6 +960,8 @@ NEEDS FIXES
 ```
 
 Empty severity sections may be omitted.
+
+The verdict is `NEEDS FIXES` when there is at least one CRITICAL, HIGH or MEDIUM finding, or at least one convention violation. Otherwise it is `READY`, even if LOW findings are present.
 
 If no meaningful problems are found:
 
@@ -909,7 +1070,9 @@ opencode-frontend-reviewer
         │
         ├── review methodology
         │
-        └── security methodology
+        ├── security methodology
+        │
+        └── code conventions C1–C6
 
 application repository
         │

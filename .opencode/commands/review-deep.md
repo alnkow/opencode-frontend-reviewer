@@ -1,194 +1,70 @@
 ---
-description: Deep review of the entire feature branch against its base branch
+description: Deep review of the entire feature branch against its base branch. Optional argument - base branch name.
 agent: reviewer
-subagent: true
+subtask: false
 ---
 
-Perform a deep code review of the entire current feature branch.
+Perform a deep PR-style review of the entire current feature branch: what will this branch introduce into the base branch if it is merged now?
 
-## Scope
+Review the FINAL combined diff of all feature commits, not each commit separately. Code added in one commit and removed in a later one is not part of the review.
 
-This is a PR-style review.
+Review checklist (attached): @.opencode/skills/frontend-review/SKILL.md
 
-Do NOT review only the current working tree or the last commit.
+## Git context
 
-Determine the complete set of changes introduced by the current branch
-since it diverged from its base branch.
+!`sh "$(git rev-parse --show-toplevel)/.opencode/scripts/review-context.sh" branch $1`
 
-### 1. Determine the base branch
+If the git context shows an ERROR, report it and stop. If it shows a WARNING, copy it to the top of the report and continue. If the auto-detected base branch looks wrong, say so at the top of the report and suggest running `/review-deep <base-branch>`.
 
-Try to determine the appropriate base branch from the repository.
+If "Commits in feature" is 0, the current branch has no commits on top of the base (for example, you are on the base branch itself). Say so, and review only the uncommitted changes if there are any.
 
-Prefer, in order:
+## How to get the code
 
-1. the repository's configured default/upstream base branch if it can be determined;
-2. `master` if it exists;
-3. `main` if it exists;
-4. `develop` if that is clearly the project's integration branch.
+1. Run the "Diff command" from the git context. If the output is truncated, run it per file: `git diff <merge-base> HEAD -- <file>`.
+2. Read every changed file in full at its current state.
+3. Ignore lockfiles, generated files and the `.opencode` folder.
+4. Uncommitted changes are NOT part of the feature diff. If the git context lists any, review them separately: `git diff HEAD` for tracked files, and read untracked files in full.
 
-Do not blindly assume a base branch if repository information shows otherwise.
+## How to investigate
 
-### 2. Determine the merge base
+- Start from the feature diff.
+- Open unchanged files only to confirm a specific finding or to find an existing implementation.
+- Use targeted searches by name and synonyms in the relevant places. Do not scan the whole repository and do not analyze unrelated modules.
+- For new code, check whether it duplicates existing components, shared UI, hooks, utilities, types, constants, selectors, stores, RTK Query endpoints, business logic or tests.
+- Do not repeat checks you have already done.
 
-Find the merge-base between the current branch and the base branch.
+## Output format
 
-Conceptually:
-
-git merge-base HEAD <base>
-
-### 3. Review the complete feature diff
-
-Review the equivalent of:
-
-git diff <merge-base>...HEAD
-
-The goal is to answer:
-
-"What will this feature branch introduce into the base branch?"
-
-If the branch contains 10 commits, review their FINAL combined result,
-not each commit independently.
-
-Code introduced in an earlier commit and removed in a later commit
-should not be reviewed.
-
-### 4. Include uncommitted work separately
-
-Check whether there are staged or unstaged changes that are NOT included
-in HEAD.
-
-If such changes exist:
-
-- mention clearly that they are uncommitted;
-- review them in a separate section;
-- do not silently mix them with the committed feature diff.
-
-## Repository investigation
-
-The feature diff defines the PRIMARY review scope.
-
-However, you MUST inspect unchanged repository code when necessary to
-understand or validate the changes.
-
-In particular, search the repository when needed for:
-
-- existing components
-- shared UI components
-- hooks
-- utilities
-- types
-- constants
-- selectors
-- stores
-- RTK Query APIs/endpoints
-- similar business logic
-- existing architectural patterns
-- existing tests
-
-Do this especially when new abstractions or reusable code are introduced.
-
-Do NOT report that something duplicates existing functionality unless you
-have actually found the existing implementation.
-
-## Review areas
-
-Apply the frontend-review skill and check:
-
-- correctness and real bugs
-- React lifecycle and hooks
-- TypeScript correctness
-- async behavior and race conditions
-- memory/resource leaks
-- Redux Toolkit and RTK Query
-- performance
-- security
-- accessibility
-- error handling
-- tests and missing important cases
-
-Also check:
-
-- modified FSD architecture and module boundaries
-- module/slice isolation
-- dependency direction
-- inappropriate deep imports
-- misplaced responsibilities
-- reuse of existing project solutions
-- SOLID
-- DRY
-- KISS
-- YAGNI
-- unnecessary abstractions
-- unnecessary complexity
-
-Pay explicit attention to JavaScript fallback semantics:
-
-- `||` vs `??`
-- whether `0`, `false`, or `""` are valid values
-- do not recommend replacing one with the other without checking semantics
-
-## Avoid noisy review
-
-Do not report:
-
-- formatting handled by project tooling
-- subjective naming preferences
-- purely stylistic preferences
-- speculative problems without evidence
-- DRY violations just because two small pieces of code look similar
-- theoretical security issues that are not applicable to the actual code
-
-Prioritize real defects, regressions, architectural problems,
-maintainability risks, and meaningful opportunities for reuse.
-
-## Output
-
-Start with:
-
+```
 # Deep Review
 
+<WARNING from the git context, if any>
+
+Current branch: <branch>
 Base branch: <branch>
 Merge base: <commit>
-Commits in feature: <count>
-Changed files: <count>
-
-Then group findings by severity:
+Diff range: <base>...HEAD
+Commits in feature: <number>
+Changed files: <number>
 
 ## Critical
 ## High
 ## Medium
 ## Low
-
-For every finding provide:
-
-- severity
-- file and line/range
-- problem
-- why it matters
-- evidence/context
-- minimal recommended fix
-
-If repository reuse is involved, include the existing implementation
-that should be considered.
-
-Then provide:
+## Conventions
 
 ## Uncommitted changes
-
-State whether additional staged/unstaged changes exist and summarize
-their review separately.
-
-Finally:
+<"None" or the separate review of uncommitted changes, in the same finding format>
 
 ## Summary
-
 - Critical: N
 - High: N
 - Medium: N
 - Low: N
+- Conventions: N
 
 ## Verdict
+READY | NEEDS FIXES
+```
 
-READY
-or
-NEEDS FIXES
+Omit empty severity sections and an empty Conventions section. The Summary and Verdict cover the feature diff and the uncommitted changes together.

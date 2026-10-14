@@ -1,7 +1,7 @@
 ---
 name: frontend-security
 description: Security-focused frontend review methodology for React/TypeScript, including XSS, CSRF context, auth/token handling, postMessage, URLs, storage, injection sinks, and browser trust boundaries.
-compatibility: OpenCode project skill
+compatibility: opencode
 metadata:
   focus: application-security
   stack: browser-react-typescript
@@ -62,6 +62,12 @@ Check targetOrigin is appropriately restricted; message handlers validate `event
 ## Request construction / client-side CSRF / injection
 
 Trace URL/path/query/body values derived from location, hash, query params, storage, messages, remote data, or user input. Look for attacker influence over state-changing endpoints, arbitrary origins, methods, or sensitive parameters.
+
+Also check insecure or credential-leaking headers, and API responses that are trusted without checks (for example, response fields rendered as HTML or used as URLs).
+
+## File handling
+
+When uploads or downloads are involved, check file type assumptions, filename handling, object URLs, and download URLs that come from external or user-controlled data. Client-side file validation is UX, not a security boundary.
 
 ## Prototype/object hazards
 

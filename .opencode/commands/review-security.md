@@ -1,195 +1,30 @@
 ---
-description: Deep security review of all current uncommitted changes
+description: Security-focused review of all current uncommitted changes
 agent: reviewer
-subagent: true
+subtask: false
 ---
 
-Perform a security-focused review of ALL current uncommitted changes.
+Perform a security-only review of ALL current uncommitted changes: staged, unstaged and untracked files.
 
-This is a dedicated security audit of the developer's current work.
+Security checklist (attached): @.opencode/skills/frontend-security/SKILL.md
 
-## Scope
+This is a security review. Do not report conventions C1–C6, naming, decomposition or general code quality. Mention a non-security bug only if it is CRITICAL.
 
-Review:
+## Git context
 
-1. unstaged changes;
-2. staged changes;
-3. relevant untracked files.
+!`sh "$(git rev-parse --show-toplevel)/.opencode/scripts/review-context.sh" local`
 
-Do NOT review previous committed changes unless they must be inspected
-to understand the security implications of the current changes.
+## How to get the code
 
-Conceptually use:
+1. Run `git diff HEAD` once (staged + unstaged). If the output is truncated, run `git diff HEAD -- <file>` per file.
+2. Read every untracked file from the list above in full. Ignore lockfiles, generated files and the `.opencode` folder.
+3. The changed code is the primary scope. Read unchanged code when you need it to understand the security impact: authentication, authorization, API clients, token and cookie handling, persisted state, routing, existing sanitization and validation, security utilities, trust boundaries.
 
-- `git diff`
-- `git diff --cached`
-- `git status --short`
+## Trace data flow, do not match keywords
 
-For relevant untracked source files, inspect their contents.
+Follow: source → transformation → storage → API → rendering/sink.
 
-The changed code defines the PRIMARY scope.
-
-You MAY inspect unchanged repository code when necessary to understand:
-
-- authentication;
-- authorization;
-- permissions;
-- API clients;
-- token handling;
-- cookie behavior;
-- persisted state;
-- routing;
-- existing sanitization/validation;
-- security utilities;
-- trust boundaries.
-
-Apply the `frontend-security` skill.
-
-## Security review areas
-
-Check applicable risks including:
-
-### XSS / DOM injection
-
-Look for:
-
-- `dangerouslySetInnerHTML`;
-- direct DOM HTML injection;
-- untrusted HTML;
-- insufficient sanitization;
-- user-controlled values reaching dangerous sinks;
-- unsafe third-party content.
-
-Do not report normal React interpolation as XSS unless there is an
-actual unsafe path.
-
-### URLs and redirects
-
-Check user-controlled or externally supplied:
-
-- URLs;
-- redirects;
-- `window.location`;
-- `window.open`;
-- link targets;
-- iframe sources;
-- resource URLs.
-
-Consider dangerous protocols and open redirects where applicable.
-
-### Authentication and tokens
-
-Inspect:
-
-- token handling;
-- credential exposure;
-- browser storage;
-- persisted Redux state;
-- logs;
-- URLs/query parameters;
-- accidental exposure to third-party code.
-
-Do not assume that localStorage is automatically a vulnerability.
-Explain the actual threat when reporting it.
-
-### CSRF
-
-Check CSRF only when applicable to the project's authentication model.
-
-Pay particular attention when credentials are automatically attached
-by the browser, such as cookie-based authentication.
-
-Do not report CSRF mechanically for every API request.
-
-### Authorization
-
-Look for:
-
-- UI-only permission checks being treated as security boundaries;
-- accidental exposure of privileged functionality;
-- missing authorization assumptions;
-- insecure client-side trust decisions.
-
-Remember that real authorization must ultimately be enforced by the
-server.
-
-### postMessage
-
-When `postMessage` is used, inspect:
-
-- targetOrigin;
-- origin validation;
-- message validation;
-- trust assumptions;
-- sensitive data transfer.
-
-### Sensitive data
-
-Look for accidental exposure through:
-
-- console logging;
-- error messages;
-- URLs;
-- persisted state;
-- local/session storage;
-- analytics;
-- third-party integrations.
-
-### API/request construction
-
-Check:
-
-- user-controlled request parameters;
-- unsafe URL construction;
-- path/query manipulation;
-- insecure headers;
-- accidental credential leakage;
-- incorrect assumptions about trusted API responses.
-
-### Parsing and object handling
-
-When applicable, inspect:
-
-- unsafe parsing;
-- unsafe deserialization;
-- prototype/object pollution risks;
-- unsafe object merging;
-- dynamic property assignment.
-
-### File handling
-
-When uploads/downloads exist, inspect:
-
-- file type assumptions;
-- filename handling;
-- object URLs;
-- external URLs;
-- client-side validation assumptions.
-
-Do not treat client-side validation as a security boundary.
-
-## Repository investigation
-
-Security analysis must consider data flow, not only individual lines.
-
-When necessary, trace:
-
-source
-→ transformation
-→ storage
-→ API
-→ rendering/sink
-
-Inspect related unchanged code if required to determine whether the
-flow is actually exploitable.
-
-Do not report a vulnerability based only on a suspicious-looking line
-without understanding its context.
-
-## Avoid false positives
-
-Before reporting a security finding, determine:
-
+Before reporting a vulnerability, answer:
 1. What is the untrusted input?
 2. Can an attacker influence it?
 3. Where does the value flow?
@@ -197,74 +32,39 @@ Before reporting a security finding, determine:
 5. What protection already exists?
 6. Is exploitation realistically possible?
 
-If these cannot be established, either omit the finding or clearly
-mark it as something requiring verification rather than a confirmed
-vulnerability.
+If you cannot answer these, drop the finding or mark it "requires verification". Do not report ordinary React `{value}` rendering as XSS. Do not treat localStorage as a vulnerability without an actual threat. Do not demand CSRF protection without first identifying the authentication model.
 
-## Severity
+## Additional focus from the user (may be empty)
 
-Use:
+$ARGUMENTS
 
-- CRITICAL — directly exploitable issue with severe impact
-- HIGH — realistic vulnerability with significant impact
-- MEDIUM — meaningful security weakness requiring specific conditions
-- LOW — defense-in-depth improvement or limited-impact weakness
+## Output format
 
-Do not inflate severity.
-
-## Output
-
-Start with:
-
+```
 # Security Review
 
 Scope:
-- Staged files: <count>
-- Unstaged files: <count>
-- Untracked files reviewed: <count>
-
-Then:
+- Staged files: <number from git context>
+- Unstaged files: <number from git context>
+- Untracked files: <number from git context>
 
 ## Critical
 ## High
 ## Medium
 ## Low
 
-Omit empty sections.
-
-For each finding include:
-
-- Severity
-- File and line/range
-- Vulnerability/problem
-- Attack scenario
-- Evidence/data flow
-- Impact
-- Minimal recommended fix
-
-Clearly distinguish:
-
-- confirmed vulnerability;
-- security weakness;
-- requires verification.
-
-Finally:
-
 ## Summary
-
 - Critical: N
 - High: N
 - Medium: N
 - Low: N
 
 ## Verdict
+READY | NEEDS FIXES
+```
 
-`READY`
+Each finding uses the standard finding format with category `security`, plus two extra fields:
+- Status: confirmed vulnerability | security weakness | requires verification
+- Attack scenario: how an attacker would exploit it
 
-or
-
-`NEEDS FIXES`
-
-If no meaningful security issues are found, explicitly say:
-
-"No significant security issues found."
+Omit empty sections. Verdict is `NEEDS FIXES` if there is at least one CRITICAL, HIGH or MEDIUM finding. If nothing is found, write "No significant security issues found." and the verdict `READY`.
